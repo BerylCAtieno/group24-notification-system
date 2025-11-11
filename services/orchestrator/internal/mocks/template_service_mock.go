@@ -31,7 +31,7 @@ func (m *TemplateServiceMock) GetTemplate(templateID, language string) (*models.
 				{Name: "user_name", Type: "string", Required: true, Description: "User's display name"},
 				{Name: "app_name", Type: "string", Required: true, Description: "Application name"},
 			},
-			Metadata: models.TemplateMetadata{
+			Meta: models.TemplateMetadata{
 				CreatedAt: time.Now().Add(-90 * 24 * time.Hour),
 				UpdatedAt: time.Now().Add(-5 * 24 * time.Hour),
 				CreatedBy: "admin@example.com",
@@ -53,7 +53,7 @@ func (m *TemplateServiceMock) GetTemplate(templateID, language string) (*models.
 				{Name: "app_name", Type: "string", Required: true, Description: "Application name"},
 				{Name: "reset_url", Type: "string", Required: true, Description: "Password reset URL"},
 			},
-			Metadata: models.TemplateMetadata{
+			Meta: models.TemplateMetadata{
 				CreatedAt: time.Now().Add(-180 * 24 * time.Hour),
 				UpdatedAt: time.Now().Add(-30 * 24 * time.Hour),
 				CreatedBy: "admin@example.com",
@@ -110,10 +110,12 @@ func (m *TemplateServiceMock) RenderTemplate(templateID, language string, variab
 		TemplateID: templateID,
 		Language:   language,
 		Version:    template.Version,
-		Subject:    renderedSubject, // Return the rendered subject
-		Rendered: models.TemplateBody{
-			HTML: renderedHTML,
-			Text: renderedText,
+		Rendered: models.RenderedContent{
+			Subject: renderedSubject,
+			Body: models.TemplateBody{
+				HTML: renderedHTML,
+				Text: renderedText,
+			},
 		},
 		RenderedAt:    time.Now(),
 		VariablesUsed: variablesUsed,

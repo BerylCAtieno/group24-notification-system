@@ -42,7 +42,7 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		zap.String("notification_type", string(req.NotificationType)),
 	)
 
-	// Step 1: Get user preferences
+	// Get user preferences
 	userPrefs, err := s.userClient.GetPreferences(req.UserID)
 	if err != nil {
 		logger.Log.Error("Failed to get user preferences",
@@ -52,7 +52,7 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		return nil, fmt.Errorf("failed to get user preferences: %w", err)
 	}
 
-	// Step 2: Check channel-specific preferences
+	// Check channel-specific preferences
 	if err := s.validateChannelPreferences(req.NotificationType, userPrefs); err != nil {
 		logger.Log.Warn("Channel validation failed",
 			zap.String("user_id", req.UserID),
@@ -67,9 +67,7 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		}, nil
 	}
 
-	// Step 3: Get and render template
-	// Note: You'll need to update this based on your templateClient API
-	// If language is no longer in preferences, you may need to remove it or set a default
+	// Get and render template
 	rendered, err := s.templateClient.RenderTemplate(
 		req.TemplateCode,
 		"en", // Default language - adjust as needed
@@ -83,7 +81,7 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		return nil, fmt.Errorf("failed to render template: %w", err)
 	}
 
-	// Step 4: Create notification object
+	// Create notification object
 	notification := &models.Notification{
 		NotificationType: string(req.NotificationType),
 		UserID:           req.UserID,
@@ -94,7 +92,7 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		Metadata:         req.Metadata,
 	}
 
-	// Step 5: Publish to Kafka
+	// Publish to Kafka
 	if err := s.publishToKafka(ctx, notification, rendered); err != nil {
 		logger.Log.Error("Failed to publish to Kafka",
 			zap.String("notification_id", notificationID),
@@ -117,7 +115,7 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 
 // publishToKafka sends the notification to the appropriate Kafka topic
 func (s *OrchestrationService) publishToKafka(ctx context.Context, notification *models.Notification, rendered interface{}) error {
-	// You'll need to define what the rendered template structure looks like
+	// TODO: Define what the rendered template structure looks like
 	// and how to extract subject/body from it
 	// This is a placeholder - adjust based on your template client response
 
