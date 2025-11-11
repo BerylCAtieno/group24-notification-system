@@ -29,8 +29,11 @@ type ServicesConfig struct {
 }
 
 type ServiceEndpoint struct {
-	BaseURL string
-	Timeout time.Duration
+	BaseURL           string
+	Timeout           time.Duration
+	RetryMaxAttempts  int
+	RetryInitialDelay time.Duration
+	RetryMaxDelay     time.Duration
 }
 
 type LoggingConfig struct {
@@ -71,12 +74,18 @@ func Load() *Config {
 		},
 		Services: ServicesConfig{
 			UserService: ServiceEndpoint{
-				BaseURL: getEnv("USER_SERVICE_URL", "http://user-service:8081"),
-				Timeout: getDurationEnv("USER_SERVICE_TIMEOUT", 3*time.Second),
+				BaseURL:           getEnv("USER_SERVICE_URL", "http://user-service:8081"),
+				Timeout:           getDurationEnv("USER_SERVICE_TIMEOUT", 3*time.Second),
+				RetryMaxAttempts:  getIntEnv("USER_SERVICE_RETRY_MAX_ATTEMPTS", 3),
+				RetryInitialDelay: getDurationEnv("USER_SERVICE_RETRY_INITIAL_DELAY", 100*time.Millisecond),
+				RetryMaxDelay:     getDurationEnv("USER_SERVICE_RETRY_MAX_DELAY", 5*time.Second),
 			},
 			TemplateService: ServiceEndpoint{
-				BaseURL: getEnv("TEMPLATE_SERVICE_URL", "http://template-service:8082"),
-				Timeout: getDurationEnv("TEMPLATE_SERVICE_TIMEOUT", 3*time.Second),
+				BaseURL:           getEnv("TEMPLATE_SERVICE_URL", "http://template-service:8082"),
+				Timeout:           getDurationEnv("TEMPLATE_SERVICE_TIMEOUT", 3*time.Second),
+				RetryMaxAttempts:  getIntEnv("TEMPLATE_SERVICE_RETRY_MAX_ATTEMPTS", 3),
+				RetryInitialDelay: getDurationEnv("TEMPLATE_SERVICE_RETRY_INITIAL_DELAY", 100*time.Millisecond),
+				RetryMaxDelay:     getDurationEnv("TEMPLATE_SERVICE_RETRY_MAX_DELAY", 5*time.Second),
 			},
 			UseMockServices: getBoolEnv("USE_MOCK_SERVICES", true),
 		},
