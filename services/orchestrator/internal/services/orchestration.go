@@ -42,7 +42,7 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		zap.String("notification_type", string(req.NotificationType)),
 	)
 
-	// Get user preferences
+	// Step 1: Get user preferences
 	userPrefs, err := s.userClient.GetPreferences(req.UserID)
 	if err != nil {
 		logger.Log.Error("Failed to get user preferences",
@@ -52,7 +52,7 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		return nil, fmt.Errorf("failed to get user preferences: %w", err)
 	}
 
-	// Check channel-specific preferences
+	// Step 2: Validate channel preferences
 	if err := s.validateChannelPreferences(req.NotificationType, userPrefs); err != nil {
 		logger.Log.Warn("Channel validation failed",
 			zap.String("user_id", req.UserID),
@@ -67,10 +67,10 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		}, nil
 	}
 
-	// Get and render template
+	// Step 3: Render template
 	rendered, err := s.templateClient.RenderTemplate(
 		req.TemplateCode,
-		"en", // Default language - adjust as needed
+		"en", // Default language
 		req.Variables,
 	)
 	if err != nil {
@@ -81,19 +81,9 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 		return nil, fmt.Errorf("failed to render template: %w", err)
 	}
 
-	// Create notification object
-	notification := &models.Notification{
-		NotificationType: string(req.NotificationType),
-		UserID:           req.UserID,
-		TemplateCode:     req.TemplateCode,
-		Variables:        req.Variables,
-		RequestID:        req.ID,
-		Priority:         s.getPriority(req.Priority),
-		Metadata:         req.Metadata,
-	}
-
-	// Publish to Kafka
-	if err := s.publishToKafka(ctx, notification, rendered); err != nil {
+	// Step 4: Create and publish Kafka payload
+	payload := s.createKafkaPayload(notificationID, req, rendered)
+	if err := s.publishToKafka(ctx, req.NotificationType, notificationID, payload); err != nil {
 		logger.Log.Error("Failed to publish to Kafka",
 			zap.String("notification_id", notificationID),
 			zap.Error(err),
@@ -113,22 +103,59 @@ func (s *OrchestrationService) ProcessNotification(req *models.NotificationReque
 	}, nil
 }
 
-// publishToKafka sends the notification to the appropriate Kafka topic
-func (s *OrchestrationService) publishToKafka(ctx context.Context, notification *models.Notification, rendered interface{}) error {
-	// TODO: Define what the rendered template structure looks like
-	// and how to extract subject/body from it
-	// This is a placeholder - adjust based on your template client response
+// createKafkaPayload constructs the payload for Kafka based on notification type
+func (s *OrchestrationService) createKafkaPayload(
+	notificationID string,
+	req *models.NotificationRequest,
+	rendered *models.RenderResponse,
+) *models.KafkaNotificationPayload {
+	payload := &models.KafkaNotificationPayload{
+		NotificationID:   notificationID,
+		NotificationType: string(req.NotificationType),
+		UserID:           req.UserID,
+		TemplateCode:     req.TemplateCode,
+		Priority:         s.getPriority(req.Priority),
+		Metadata:         req.Metadata,
+		CreatedAt:        time.Now(),
+	}
 
-	// Publish to the correct topic based on notification type
+	// Set rendered content based on notification type
+	switch req.NotificationType {
+	case models.NotificationEmail:
+		payload.Subject = rendered.Rendered.Subject
+		payload.Body = rendered.Rendered.Body.HTML
+		payload.TextBody = rendered.Rendered.Body.Text
+	case models.NotificationPush:
+		// For push notifications, use the text body as the message
+		payload.Body = rendered.Rendered.Body.Text
+		// Subject can be used as the push notification title
+		if rendered.Rendered.Subject != "" {
+			payload.Subject = rendered.Rendered.Subject
+		}
+	}
+
+	return payload
+}
+
+// publishToKafka sends the notification to the appropriate Kafka topic
+func (s *OrchestrationService) publishToKafka(
+	ctx context.Context,
+	notificationType models.NotificationType,
+	key string,
+	payload *models.KafkaNotificationPayload,
+) error {
 	return s.kafkaManager.PublishByType(
 		ctx,
-		notification.NotificationType,
-		notification.RequestID,
-		notification, // Or create a proper payload struct
+		string(notificationType),
+		key,
+		payload,
 	)
 }
 
-func (s *OrchestrationService) validateChannelPreferences(notificationType models.NotificationType, prefs *models.UserPreferences) error {
+func (s *OrchestrationService) validateChannelPreferences(
+	notificationType models.NotificationType,
+	prefs *models.UserPreferences,
+) error {
 	switch notificationType {
 	case models.NotificationEmail:
 		if !prefs.Email {
