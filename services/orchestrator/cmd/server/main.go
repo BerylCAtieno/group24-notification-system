@@ -9,10 +9,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/clients"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/config"
+	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/database"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/handlers"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/middleware"
-	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/mocks"
+	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/repository"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/services"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/kafka"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/logger"
@@ -53,22 +55,54 @@ func main() {
 		zap.String("push_topic", cfg.Kafka.PushTopic),
 	)
 
-	// Initialize clients (using mocks for now)
-	var userClient = mocks.NewUserServiceMock()
-	var templateClient = mocks.NewTemplateServiceMock()
+	// Initialize PostgreSQL database
+	db, err := database.NewPostgreSQL(cfg.PostgreSQL)
+	if err != nil {
+		logger.Log.Fatal("Failed to initialize database", zap.Error(err))
+	}
+	defer db.Close()
 
-	logger.Log.Info("Using mock services for development")
+	logger.Log.Info("Database connection established")
 
-	// Initialize services with Kafka
+	// Initialize Redis
+	redisClient, err := database.NewRedis(cfg.Redis)
+	if err != nil {
+		logger.Log.Fatal("Failed to initialize Redis", zap.Error(err))
+	}
+	defer redisClient.Close()
+
+	logger.Log.Info("Redis connection established")
+
+	// Initialize repository
+	notificationRepo := repository.NewNotificationRepository(db)
+
+	// Initialize idempotency service
+	idempotencyService := services.NewIdempotencyService(redisClient, cfg.Redis.IdempotencyTTL)
+
+	// Initialize clients (mocks or real based on configuration)
+	userClient := clients.NewUserClientFromConfig(cfg.Services)
+	templateClient := clients.NewTemplateClientFromConfig(cfg.Services)
+
+	if cfg.Services.UseMockServices {
+		logger.Log.Info("Using mock services for development")
+	} else {
+		logger.Log.Info("Using real service clients",
+			zap.String("user_service", cfg.Services.UserService.BaseURL),
+			zap.String("template_service", cfg.Services.TemplateService.BaseURL),
+		)
+	}
+
+	// Initialize services with Kafka and repository
 	orchestrationService := services.NewOrchestrationService(
 		userClient,
 		templateClient,
 		kafkaManager,
+		notificationRepo,
 	)
 
 	// Initialize handlers
-	healthHandler := handlers.NewHealthHandler()
-	notificationHandler := handlers.NewNotificationHandler(orchestrationService)
+	healthHandler := handlers.NewHealthHandler(db)
+	notificationHandler := handlers.NewNotificationHandler(orchestrationService, idempotencyService)
 	userHandler := handlers.NewUserHandler()
 
 	// Setup Gin router

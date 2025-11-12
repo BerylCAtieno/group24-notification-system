@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
@@ -14,11 +15,16 @@ import (
 
 type NotificationHandler struct {
 	orchestrationService *services.OrchestrationService
+	idempotencyService   *services.IdempotencyService
 }
 
-func NewNotificationHandler(orchestrationService *services.OrchestrationService) *NotificationHandler {
+func NewNotificationHandler(
+	orchestrationService *services.OrchestrationService,
+	idempotencyService *services.IdempotencyService,
+) *NotificationHandler {
 	return &NotificationHandler{
 		orchestrationService: orchestrationService,
+		idempotencyService:   idempotencyService,
 	}
 }
 
@@ -42,6 +48,30 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 		return
 	}
 
+	// Check for idempotency - use the ID field as the idempotency key
+	ctx := context.Background()
+	cachedResponse, err := h.idempotencyService.GetCachedResponse(ctx, req.ID)
+	if err != nil {
+		logger.Log.Warn("Failed to check idempotency, proceeding with request",
+			zap.String("request_id", requestID.(string)),
+			zap.String("idempotency_key", req.ID),
+			zap.Error(err),
+		)
+		// Continue processing even if idempotency check fails
+	} else if cachedResponse != nil {
+		// Return cached response
+		logger.Log.Info("Returning cached response for idempotency key",
+			zap.String("request_id", requestID.(string)),
+			zap.String("idempotency_key", req.ID),
+			zap.String("notification_id", cachedResponse.NotificationID),
+		)
+		duration := time.Since(startTime)
+		c.Header("X-Response-Time", duration.String())
+		c.Header("X-Idempotent-Replay", "true")
+		c.JSON(http.StatusOK, cachedResponse)
+		return
+	}
+
 	// Process the notification
 	response, err := h.orchestrationService.ProcessNotification(&req)
 	if err != nil {
@@ -57,6 +87,15 @@ func (h *NotificationHandler) Create(c *gin.Context) {
 			},
 		})
 		return
+	}
+
+	// Store response in Redis for idempotency (even if it fails, we don't want to block the response)
+	if storeErr := h.idempotencyService.StoreResponse(ctx, req.ID, response); storeErr != nil {
+		logger.Log.Warn("Failed to store idempotency key, response still returned",
+			zap.String("request_id", requestID.(string)),
+			zap.String("idempotency_key", req.ID),
+			zap.Error(storeErr),
+		)
 	}
 
 	duration := time.Since(startTime)
@@ -110,21 +149,56 @@ func (h *NotificationHandler) UpdateStatus(c *gin.Context) {
 		return
 	}
 
-	logger.Log.Info("Notification status updated",
+	logger.Log.Info("Updating notification status",
 		zap.String("notification_id", notificationID),
 		zap.String("status", req.Status),
 		zap.String("request_id", requestID.(string)),
 	)
 
-	// TODO: Implement logic to update status in persistent storage (e.g., database)
+	// Convert string status to NotificationStatus type
+	notificationStatus := models.NotificationStatus(req.Status)
+	if notificationStatus != models.StatusPending && notificationStatus != models.StatusDelivered && notificationStatus != models.StatusFailed {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": gin.H{
+				"success": false,
+				"message": "Invalid status value",
+				"error":   gin.H{"validation_error": "status must be one of: pending, delivered, failed"},
+			},
+		})
+		return
+	}
+
+	// Update status in database
+	ctx := context.Background()
+	if err := h.orchestrationService.UpdateNotificationStatus(ctx, notificationID, notificationStatus, req.Error); err != nil {
+		logger.Log.Error("Failed to update notification status",
+			zap.String("notification_id", notificationID),
+			zap.String("request_id", requestID.(string)),
+			zap.Error(err),
+		)
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": gin.H{
+				"success": false,
+				"message": "Failed to update notification status",
+				"error":   gin.H{"internal_server_error": err.Error()},
+			},
+		})
+		return
+	}
+
+	logger.Log.Info("Notification status updated successfully",
+		zap.String("notification_id", notificationID),
+		zap.String("status", req.Status),
+		zap.String("request_id", requestID.(string)),
+	)
 
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
-		"message": fmt.Sprintf("Status update received for notification %s: %s", notificationID, req.Status),
+		"message": fmt.Sprintf("Status updated for notification %s: %s", notificationID, req.Status),
 		"data": gin.H{
 			"notification_id": notificationID,
-			"status":          "received",
-			"created_at":      time.Now(),
+			"status":          req.Status,
+			"updated_at":      time.Now(),
 		},
 	})
 }

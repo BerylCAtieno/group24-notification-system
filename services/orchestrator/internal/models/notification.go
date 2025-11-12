@@ -3,7 +3,7 @@ package models
 import "time"
 
 type NotificationRequest struct {
-	ID               string                 `json:"id" binding:"required"`
+	ID               string                 `json:"id" binding:"required"` // Used as idempotency key
 	NotificationType NotificationType       `json:"notification_type" binding:"required,oneof=email push"`
 	UserID           string                 `json:"user_id" binding:"required"`
 	TemplateCode     string                 `json:"template_code" binding:"required"`
