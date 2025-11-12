@@ -152,18 +152,28 @@ Before integration, please verify:
 
 ### Test Case 1: Valid User with Both Preferences Enabled
 GET /api/v1/users/user-123/preferences
-**Expected Response:**son
+
+**Expected Response:**
+```json
 {
   "email_enabled": true,
   "push_enabled": true
-}### Test Case 2: Valid User with Email Disabled
-GET /api/v1/users/user-456/preferences**Expected Response:**on
+}
+```
+
+### Test Case 2: Valid User with Email Disabled
+GET /api/v1/users/user-456/preferences
+**Expected Response:**
+```json
 {
   "email_enabled": false,
   "push_enabled": true
 }
+```
 ### Test Case 3: Non-existent User
-GET /api/v1/users/non-existent-user/preferences**Expected Response:**tp
+GET /api/v1/users/non-existent-user/preferences
+**Expected Response:**
+```json
 Status: 404 Not Found
 {
   "error": {
@@ -173,8 +183,12 @@ Status: 404 Not Found
       "user_id": "non-existent-user"
     }
   }
-}### Test Case 4: Server Error
-GET /api/v1/users/user-789/preferences**Expected Response:**
+}
+```
+### Test Case 4: Server Error
+GET /api/v1/users/user-789/preferences
+**Expected Response:**
+```json
 Status: 503 Service Unavailable
 {
   "error": {
@@ -185,5 +199,6 @@ Status: 503 Service Unavailable
     }
   }
 }
+```
 ---
 

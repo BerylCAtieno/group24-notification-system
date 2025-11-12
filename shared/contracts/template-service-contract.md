@@ -1,18 +1,4 @@
-Reviewing the orchestrator's template service expectations to draft the API contract:
 
-
-[3 tools called]
-
-
-Reading the template model file for complete structure:
-
-
-[2 tools called]
-
-
-Template Service API contract:
-
-```markdown
 # Template Service API Contract
 ## Integration with Orchestrator Service
 
