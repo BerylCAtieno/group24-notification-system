@@ -9,11 +9,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/clients"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/config"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/database"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/handlers"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/middleware"
-	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/mocks"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/repository"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/internal/services"
 	"github.com/BerylCAtieno/group24-notification-system/services/orchestrator/pkg/kafka"
@@ -79,11 +79,18 @@ func main() {
 	// Initialize idempotency service
 	idempotencyService := services.NewIdempotencyService(redisClient, cfg.Redis.IdempotencyTTL)
 
-	// Initialize clients (using mocks for now)
-	var userClient = mocks.NewUserServiceMock()
-	var templateClient = mocks.NewTemplateServiceMock()
+	// Initialize clients (mocks or real based on configuration)
+	userClient := clients.NewUserClientFromConfig(cfg.Services)
+	templateClient := clients.NewTemplateClientFromConfig(cfg.Services)
 
-	logger.Log.Info("Using mock services for development")
+	if cfg.Services.UseMockServices {
+		logger.Log.Info("Using mock services for development")
+	} else {
+		logger.Log.Info("Using real service clients",
+			zap.String("user_service", cfg.Services.UserService.BaseURL),
+			zap.String("template_service", cfg.Services.TemplateService.BaseURL),
+		)
+	}
 
 	// Initialize services with Kafka and repository
 	orchestrationService := services.NewOrchestrationService(
