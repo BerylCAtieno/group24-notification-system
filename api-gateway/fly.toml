@@ -1,0 +1,38 @@
+# Fly.io configuration for API Gateway
+# Usage: fly launch (first time) or fly deploy (updates)
+
+app = "api-gateway"  # Change to your app name
+primary_region = "iad"  # Choose closest: iad, ord, dfw, sea, lax, etc.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "80"
+
+[[services]]
+  internal_port = 80
+  protocol = "tcp"
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 1000
+    soft_limit = 500
+
+  [[services.http_checks]]
+    interval = "10s"
+    timeout = "2s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+

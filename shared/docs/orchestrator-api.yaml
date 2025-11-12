@@ -1,0 +1,577 @@
+openapi: 3.0.3
+info:
+  title: Orchestrator Service API
+  description: |
+    The Orchestrator Service is the central coordinator for the notification system.
+    It orchestrates the flow of notifications by:
+    - Fetching user preferences
+    - Validating notification eligibility
+    - Rendering templates
+    - Queuing notifications for delivery via Kafka
+    
+    All field names use **snake_case** convention.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: http://orchestrator:8080
+    description: Docker container server
+
+tags:
+  - name: Notifications
+    description: Notification management endpoints
+  - name: Status
+    description: Notification status update endpoints
+  - name: Users
+    description: User management endpoints
+  - name: Health
+    description: Health check endpoints
+
+paths:
+  /health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Simple health check endpoint
+      operationId: healthCheck
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  
+  /health/live:
+    get:
+      tags:
+        - Health
+      summary: Liveness probe
+      description: Kubernetes liveness probe endpoint
+      operationId: livenessProbe
+      responses:
+        '200':
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  
+  /health/ready:
+    get:
+      tags:
+        - Health
+      summary: Readiness probe
+      description: Kubernetes readiness probe endpoint. Checks database connectivity.
+      operationId: readinessProbe
+      responses:
+        '200':
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+        '503':
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/notifications:
+    post:
+      tags:
+        - Notifications
+      summary: Create notification
+      description: |
+        Creates a new notification request. The orchestrator will:
+        1. Validate user preferences
+        2. Fetch and render the template
+        3. Queue the notification to Kafka
+        
+        **Idempotency**: Use the `request_id` field to ensure idempotent requests.
+        If the same `request_id` is sent twice, the cached response will be returned.
+      operationId: createNotification
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NotificationRequest'
+            examples:
+              email_notification:
+                summary: Email notification example
+                value:
+                  request_id: "req-123e4567-e89b-12d3-a456-426614174000"
+                  notification_type: "email"
+                  user_id: "usr_7x9k2p"
+                  template_code: "welcome_email"
+                  variables:
+                    name: "John Doe"
+                    link: "https://example.com/verify"
+                  priority: 2
+                  metadata:
+                    campaign_id: "campaign-123"
+                    source: "api"
+              push_notification:
+                summary: Push notification example
+                value:
+                  request_id: "req-456e7890-e89b-12d3-a456-426614174001"
+                  notification_type: "push"
+                  user_id: "usr_abc123"
+                  template_code: "order_confirmation"
+                  variables:
+                    order_id: "order-12345"
+                    amount: "$99.99"
+                  priority: 3
+      responses:
+        '201':
+          description: Notification queued successfully
+          headers:
+            X-Idempotent-Replay:
+              description: Indicates if this is a cached response (true) or new (false)
+              schema:
+                type: string
+                enum: [true, false]
+            X-Response-Time:
+              description: Response processing time
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationCreateResponse'
+        '200':
+          description: Cached response (idempotent replay)
+          headers:
+            X-Idempotent-Replay:
+              description: Always "true" for cached responses
+              schema:
+                type: string
+                enum: [true]
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NotificationCreateResponse'
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized - Invalid or missing API key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/email/status:
+    post:
+      tags:
+        - Status
+      summary: Update email notification status
+      description: |
+        Updates the status of an email notification. Called by the Email Service
+        after processing a notification from Kafka.
+      operationId: updateEmailStatus
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusUpdateRequest'
+            example:
+              notification_id: "550e8400-e29b-41d4-a716-446655440000"
+              status: "delivered"
+              timestamp: "2025-11-12T16:30:05Z"
+              error: null
+      responses:
+        '200':
+          description: Status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusUpdateResponse'
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/push/status:
+    post:
+      tags:
+        - Status
+      summary: Update push notification status
+      description: |
+        Updates the status of a push notification. Called by the Push Service
+        after processing a notification from Kafka.
+      operationId: updatePushStatus
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatusUpdateRequest'
+            example:
+              notification_id: "550e8400-e29b-41d4-a716-446655440000"
+              status: "delivered"
+              timestamp: "2025-11-12T16:30:05Z"
+              error: null
+      responses:
+        '200':
+          description: Status updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusUpdateResponse'
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/v1/users:
+    post:
+      tags:
+        - Users
+      summary: Create user
+      description: |
+        Creates a new user. This endpoint validates the request and hands it off
+        to the User Service for actual creation.
+      operationId: createUser
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserCreationRequest'
+      responses:
+        '201':
+          description: User creation request accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserCreationResponse'
+        '400':
+          description: Invalid request payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: API key for authentication. Can also be provided as query parameter `api_key`.
+
+  schemas:
+    NotificationRequest:
+      type: object
+      required:
+        - request_id
+        - notification_type
+        - user_id
+        - template_code
+      properties:
+        request_id:
+          type: string
+          description: Unique request identifier for idempotency. Use UUID or unique string.
+          example: "req-123e4567-e89b-12d3-a456-426614174000"
+        notification_type:
+          type: string
+          enum: [email, push]
+          description: Type of notification to send
+          example: "email"
+        user_id:
+          type: string
+          description: ID of the user receiving the notification
+          example: "usr_7x9k2p"
+        template_code:
+          type: string
+          description: Template code/identifier to use
+          example: "welcome_email"
+        variables:
+          type: object
+          description: Variables to substitute in the template
+          additionalProperties: true
+          example:
+            name: "John Doe"
+            link: "https://example.com/verify"
+        priority:
+          type: integer
+          description: |
+            Priority level (0-4):
+            - 0 or unset = normal
+            - 1 = low
+            - 2 = normal
+            - 3 = high
+            - 4 = urgent
+          minimum: 0
+          maximum: 4
+          example: 2
+        scheduled_for:
+          type: string
+          format: date-time
+          description: Optional scheduled delivery time (ISO 8601)
+          example: "2025-11-13T10:00:00Z"
+        metadata:
+          type: object
+          description: Additional metadata
+          additionalProperties: true
+          example:
+            campaign_id: "campaign-123"
+            source: "api"
+
+    NotificationResponse:
+      type: object
+      properties:
+        notification_id:
+          type: string
+          description: Unique notification identifier (UUID)
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          type: string
+          enum: [pending, delivered, failed]
+          description: Current notification status
+          example: "pending"
+        timestamp:
+          type: string
+          format: date-time
+          description: Notification creation timestamp
+          example: "2025-11-12T16:30:00Z"
+        error:
+          type: string
+          nullable: true
+          description: Error message if status is failed
+          example: null
+
+    StatusUpdateRequest:
+      type: object
+      required:
+        - notification_id
+        - status
+      properties:
+        notification_id:
+          type: string
+          description: Notification ID to update
+          example: "550e8400-e29b-41d4-a716-446655440000"
+        status:
+          type: string
+          enum: [delivered, pending, failed]
+          description: New status value
+          example: "delivered"
+        timestamp:
+          type: string
+          format: date-time
+          description: Timestamp when status changed (ISO 8601)
+          example: "2025-11-12T16:30:05Z"
+        error:
+          type: string
+          nullable: true
+          description: Error message if status is failed
+          example: null
+
+    UserCreationRequest:
+      type: object
+      required:
+        - name
+        - email
+        - password
+      properties:
+        name:
+          type: string
+          example: "John Doe"
+        email:
+          type: string
+          format: email
+          example: "john@example.com"
+        password:
+          type: string
+          format: password
+          example: "securePassword123"
+        push_token:
+          type: string
+          nullable: true
+          description: Device push notification token
+          example: "fcm-token-123"
+        preferences:
+          type: object
+          properties:
+            email:
+              type: boolean
+              example: true
+            push:
+              type: boolean
+              example: true
+
+    Response:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Indicates if the request was successful
+        message:
+          type: string
+          description: Human-readable message
+        data:
+          description: Response data (varies by endpoint)
+        error:
+          type: string
+          nullable: true
+          description: Error message if success is false
+
+    NotificationCreateResponse:
+      allOf:
+        - $ref: '#/components/schemas/Response'
+        - type: object
+          properties:
+            data:
+              $ref: '#/components/schemas/NotificationResponse'
+
+    StatusUpdateResponse:
+      allOf:
+        - $ref: '#/components/schemas/Response'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                notification_id:
+                  type: string
+                status:
+                  type: string
+                updated_at:
+                  type: string
+                  format: date-time
+
+    UserCreationResponse:
+      allOf:
+        - $ref: '#/components/schemas/Response'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                push_token:
+                  type: string
+                  nullable: true
+                preferences:
+                  type: object
+
+    HealthResponse:
+      allOf:
+        - $ref: '#/components/schemas/Response'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: "ok"
+                timestamp:
+                  type: string
+                  format: date-time
+
+    ReadinessResponse:
+      allOf:
+        - $ref: '#/components/schemas/Response'
+        - type: object
+          properties:
+            data:
+              type: object
+              properties:
+                status:
+                  type: string
+                  example: "ready"
+                checks:
+                  type: object
+                  properties:
+                    database:
+                      type: string
+                      example: "ok"
+                    user_service:
+                      type: string
+                      example: "ok"
+                    template_service:
+                      type: string
+                      example: "ok"
+                    kafka:
+                      type: string
+                      example: "ok"
+                timestamp:
+                  type: string
+                  format: date-time
+
+    ErrorResponse:
+      allOf:
+        - $ref: '#/components/schemas/Response'
+        - type: object
+          properties:
+            success:
+              type: boolean
+              example: false
+            error:
+              type: string
+              example: "Invalid request payload"
+
