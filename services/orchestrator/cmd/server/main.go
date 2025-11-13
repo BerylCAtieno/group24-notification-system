@@ -43,6 +43,9 @@ func main() {
 		EmailTopic: cfg.Kafka.EmailTopic,
 		PushTopic:  cfg.Kafka.PushTopic,
 		Logger:     logger.Log,
+		Username:   cfg.Kafka.Username,
+		Password:   cfg.Kafka.Password,
+		UseTLS:     cfg.Kafka.UseTLS,
 	})
 	if err != nil {
 		logger.Log.Fatal("Failed to initialize Kafka manager", zap.Error(err))
@@ -145,8 +148,8 @@ func main() {
 	srv := &http.Server{
 		Addr:         ":" + cfg.Server.Port,
 		Handler:      router,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
+		ReadTimeout:  cfg.Server.ReadTimeout * time.Second,
+		WriteTimeout: cfg.Server.WriteTimeout * time.Second,
 	}
 
 	// Start server in a goroutine

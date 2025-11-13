@@ -2,11 +2,14 @@ package kafka
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"net"
 	"time"
 
 	"github.com/segmentio/kafka-go"
+	"github.com/segmentio/kafka-go/sasl/plain"
 	"go.uber.org/zap"
 )
 
@@ -24,9 +27,12 @@ type Producer struct {
 }
 
 type ProducerConfig struct {
-	Brokers []string
-	Topic   string
-	Logger  *zap.Logger
+	Brokers  []string
+	Topic    string
+	Logger   *zap.Logger
+	Username string
+	Password string
+	UseTLS   bool
 }
 
 type Message struct {
@@ -35,6 +41,36 @@ type Message struct {
 }
 
 func NewProducer(cfg ProducerConfig) *Producer {
+	dialer := &kafka.Dialer{
+		Timeout:   10 * time.Second,
+		DualStack: true,
+	}
+
+	// Configuration SASL/SSL for Confluent Cloud
+	if cfg.UseTLS && cfg.Username != "" && cfg.Password != "" {
+		dialer.SASLMechanism = plain.Mechanism{
+			Username: cfg.Username,
+			Password: cfg.Password,
+		}
+		dialer.TLS = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+
+	// Create transport with dialer if TLS is enabled
+	var transport *kafka.Transport
+	if cfg.UseTLS && cfg.Username != "" && cfg.Password != "" {
+		transport = &kafka.Transport{
+			Dial: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				conn, err := dialer.DialContext(ctx, network, addr)
+				if err != nil {
+					return nil, err
+				}
+				return conn, nil
+			},
+		}
+	}
+
 	writer := &kafka.Writer{
 		Addr:         kafka.TCP(cfg.Brokers...),
 		Topic:        cfg.Topic,
@@ -43,7 +79,11 @@ func NewProducer(cfg ProducerConfig) *Producer {
 		WriteTimeout: 10 * time.Second,
 		ReadTimeout:  10 * time.Second,
 		RequiredAcks: kafka.RequireOne,
-		Async:        false, // Synchronous for reliability
+		Async:        false,
+	}
+
+	if transport != nil {
+		writer.Transport = transport
 	}
 
 	return &Producer{
