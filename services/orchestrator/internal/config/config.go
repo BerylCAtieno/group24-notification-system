@@ -46,7 +46,10 @@ type KafkaConfig struct {
 	Brokers     []string
 	EmailTopic  string
 	PushTopic   string
-	FailedTopic string // Dead Letter Queue topic
+	FailedTopic string
+	Username    string
+	Password    string
+	UseTLS      bool
 }
 
 type RedisConfig struct {
@@ -102,6 +105,9 @@ func Load() *Config {
 			EmailTopic:  getEnv("KAFKA_EMAIL_TOPIC", "email.queue"),
 			PushTopic:   getEnv("KAFKA_PUSH_TOPIC", "push.queue"),
 			FailedTopic: getEnv("KAFKA_FAILED_TOPIC", "failed.queue"),
+			Username:    getEnv("KAFKA_USERNAME", ""),
+			Password:    getEnv("KAFKA_PASSWORD", ""),
+			UseTLS:      getBoolEnv("KAFKA_USE_TLS", false),
 		},
 		Redis: RedisConfig{
 			Host:           getEnv("REDIS_HOST", "localhost"),

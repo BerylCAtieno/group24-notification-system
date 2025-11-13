@@ -28,6 +28,9 @@ type ManagerConfig struct {
 	EmailTopic string
 	PushTopic  string
 	Logger     *zap.Logger
+	Username   string
+	Password   string
+	UseTLS     bool
 }
 
 func NewManager(cfg ManagerConfig) (*Manager, error) {
@@ -36,15 +39,21 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 	}
 
 	emailProducer := NewProducer(ProducerConfig{
-		Brokers: cfg.Brokers,
-		Topic:   cfg.EmailTopic,
-		Logger:  cfg.Logger,
+		Brokers:  cfg.Brokers,
+		Topic:    cfg.EmailTopic,
+		Logger:   cfg.Logger,
+		Username: cfg.Username,
+		Password: cfg.Password,
+		UseTLS:   cfg.UseTLS,
 	})
 
 	pushProducer := NewProducer(ProducerConfig{
-		Brokers: cfg.Brokers,
-		Topic:   cfg.PushTopic,
-		Logger:  cfg.Logger,
+		Brokers:  cfg.Brokers,
+		Topic:    cfg.PushTopic,
+		Logger:   cfg.Logger,
+		Username: cfg.Username,
+		Password: cfg.Password,
+		UseTLS:   cfg.UseTLS,
 	})
 
 	return &Manager{
