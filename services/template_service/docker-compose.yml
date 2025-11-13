@@ -2,7 +2,7 @@ version: "3.9"
 
 services:
   ############################################
-  # PostgreSQL (Database for Django)
+  # PostgreSQL
   ############################################
   db:
     image: postgres:15
@@ -22,7 +22,7 @@ services:
       retries: 5
 
   ############################################
-  # Zookeeper (Required by Kafka)
+  # Zookeeper
   ############################################
   zookeeper:
     image: bitnami/zookeeper:latest
@@ -48,21 +48,16 @@ services:
       KAFKA_ENABLE_KRAFT: "no"
       KAFKA_BROKER_ID: 1
       KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
-
-      # Listener configuration (important)
       KAFKA_CFG_LISTENERS: PLAINTEXT://:9092
       KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
-      
-      # Allow auto topic creation
       KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
-
       ALLOW_PLAINTEXT_LISTENER: "yes"
     volumes:
       - kafka_data:/bitnami/kafka
 
   ############################################
-  # Kafka UI (optional but very helpful)
+  # Kafka UI
   ############################################
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
@@ -91,7 +86,7 @@ services:
       - db
       - kafka
     environment:
-      DJANGO_SETTINGS_MODULE: app.settings
+      DJANGO_SETTINGS_MODULE: template_service.settings
       DATABASE_HOST: db
       DATABASE_NAME: templates_db
       DATABASE_USER: postgres
@@ -99,9 +94,10 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     volumes:
       - .:/app
+      - ./logs:/logs   # Mount Django logs for Promtail
 
   ############################################
-  # Kafka Worker (consumer)
+  # Kafka Worker
   ############################################
   kafka-worker:
     build: .
@@ -111,12 +107,57 @@ services:
       - django
       - kafka
     environment:
-      DJANGO_SETTINGS_MODULE: app.settings
+      DJANGO_SETTINGS_MODULE: template_service.settings
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     volumes:
       - .:/app
+      - ./logs:/logs
+
+  ############################################
+  # Loki (log aggregation)
+  ############################################
+  loki:
+    image: grafana/loki:2.9.1
+    container_name: loki
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/loki-config.yaml
+    volumes:
+      - ./loki-config.yaml:/etc/loki/loki-config.yaml
+      - ./loki-data:/loki
+
+  ############################################
+  # Promtail (collect Django logs)
+  ############################################
+  promtail:
+    image: grafana/promtail:2.9.0
+    container_name: promtail
+    depends_on:
+      - loki
+    volumes:
+      - ./promtail/promtail-config.yaml:/etc/promtail/config.yaml
+      - ./logs:/logs   # Django logs
+    command: -config.file=/etc/promtail/config.yaml
+
+  ############################################
+  # Grafana (dashboard)
+  ############################################
+  grafana:
+    image: grafana/grafana:10.2.1
+    container_name: grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    ports:
+      - "3000:3000"
+    depends_on:
+      - loki
+    volumes:
+      - grafana_data:/var/lib/grafana
 
 volumes:
   pgdata:
   kafka_data:
   zookeeper_data:
+  grafana_data:
+  loki-data:
