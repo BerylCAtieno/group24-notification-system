@@ -25,9 +25,13 @@ func NewRedis(cfg config.RedisConfig) (*RedisClient, error) {
 		Addr:     addr,
 		Password: cfg.Password,
 		DB:       cfg.DB,
-		TLSConfig: &tls.Config{
+	}
+
+	// Enable TLS for cloud Redis
+	if cfg.Host != "localhost" && cfg.Host != "127.0.0.1" {
+		opts.TLSConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
-		},
+		}
 	}
 
 	client := redis.NewClient(opts)
