@@ -29,9 +29,12 @@ func TestKafkaConfig() kafka.ProducerConfig {
 	}
 
 	return kafka.ProducerConfig{
-		Brokers: []string{brokers},
-		Topic:   "test_topic",
-		Logger:  logger.Log,
+		Brokers:  []string{brokers},
+		Topic:    "test_topic",
+		Logger:   logger.Log,
+		Username: "",
+		Password: "",
+		UseTLS:   false,
 	}
 }
 
