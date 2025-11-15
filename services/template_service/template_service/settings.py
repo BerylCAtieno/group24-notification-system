@@ -1,44 +1,57 @@
-
-from kafka import KafkaProducer
+# -------------------------------
+# IMPORTS
+# -------------------------------
+from kafka import KafkaProducer  # Optional Kafka producer
 from pathlib import Path
-import os
+from pythonjsonlogger import jsonlogger  # JSON logging format
 import os
 import logging
-from pythonjsonlogger import jsonlogger
-from kafka import KafkaProducer
+import dj_database_url  # Optional: parse DATABASE_URL for production
+from dotenv import load_dotenv  # Load environment variables from .env
+from decouple import config  # Easy configuration with defaults
 
-
-
-# Build paths inside the project like this: BASE_DIR / 'subdir'.
+# -------------------------------
+# BASE DIRECTORY
+# -------------------------------
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Load .env file if it exists
+load_dotenv(os.path.join(BASE_DIR, ".env"))
+
+# -------------------------------
+# LOGGING DIRECTORY
+# -------------------------------
 LOG_DIR = os.path.join(BASE_DIR, "logs")
-os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(LOG_DIR, exist_ok=True)  # Ensure the directory exists
 
+# -------------------------------
+# KAFKA CONFIGURATION
+# -------------------------------
 USE_KAFKA = os.getenv("USE_KAFKA", "false").lower() == "true"
-
 producer = None
+
 if USE_KAFKA:
     try:
         producer = KafkaProducer(bootstrap_servers="localhost:9092")
     except Exception:
-        producer = None
+        producer = None  # Safe fallback if Kafka is unavailable
 
-
-
-SECRET_KEY = 'django-insecure-qk^!cwh1*a%db0sgy!7gi$q#y!glw*s+e_j!!6snw7bq2c+qad'
+# Kafka topics
 KAFKA_BOOTSTRAP_SERVERS = ["kafka:9092"]
 KAFKA_TEMPLATE_TOPIC = "template_render_requests"
 KAFKA_RESPONSE_TOPIC = "template_render_responses"
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# -------------------------------
+# SECRET KEY & DEBUG
+# -------------------------------
+SECRET_KEY = os.getenv("SECRET_KEY", "local-secret-key-for-dev")
+DEBUG = os.getenv("DEBUG", "False").lower() in ["true", "1", "yes"]
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = ["*"]  # For dev; update in production
 
-
-# Application definition
-
+# -------------------------------
+# INSTALLED APPS
+# -------------------------------
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -49,13 +62,15 @@ INSTALLED_APPS = [
     "app",
     "rest_framework",
     "django_prometheus",
-
 ]
-#"django_cid.middleware.CidMiddleware",
+
+# -------------------------------
+# MIDDLEWARE
+# -------------------------------
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
-    "app.middleware.correlation.CorrelationIdMiddleware",
-    
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # For static files
+    "app.middleware.correlation.CorrelationIdMiddleware",  # Custom middleware
     "django_prometheus.middleware.PrometheusBeforeMiddleware",
     "django_prometheus.middleware.PrometheusAfterMiddleware",
     'django.contrib.sessions.middleware.SessionMiddleware',
@@ -66,16 +81,28 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-ROOT_URLCONF = 'template_service.urls'
+# -------------------------------
+# STATIC FILES
+# -------------------------------
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STATIC_URL = 'static/'
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
 
+# -------------------------------
+# URLS & WSGI
+# -------------------------------
+ROOT_URLCONF = 'template_service.urls'  # Make sure template_service/urls.py exists
+WSGI_APPLICATION = 'template_service.wsgi.application'
 
+# -------------------------------
+# TEMPLATES
+# -------------------------------
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [],  # Add paths if you have custom templates
         'APP_DIRS': True,
         'OPTIONS': {
-
             'context_processors': [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
@@ -87,80 +114,59 @@ TEMPLATES = [
         "BACKEND": "django.template.backends.jinja2.Jinja2",
         "APP_DIRS": True,
         "OPTIONS": {
-            "environment": "template_service.jinja_env.environment",
+            "environment": "template_service.jinja_env.environment",  # Custom Jinja2 environment
         },
     },
 ]
-# Jinja2 Template Engine
 
-WSGI_APPLICATION = 'template_service.wsgi.application'
+# -------------------------------
+# DATABASES
+# -------------------------------
+# Local: SQLite, Production: can use DATABASE_URL with PostgreSQL
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-
-# Database
-# https://docs.djangoproject.com/en/5.2/ref/settings/#databases
-DATABASE_ENGINE = os.getenv("DATABASE_ENGINE", "sqlite")
-
-if DATABASE_ENGINE == "postgres":
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.getenv("POSTGRES_NAME"),
-            "USER": os.getenv("POSTGRES_USER"),
-            "PASSWORD": os.getenv("POSTGRES_PASSWORD"),
-            "HOST": os.getenv("POSTGRES_HOST", "localhost"),
-            "PORT": os.getenv("POSTGRES_PORT", "5432"),
-        }
+DATABASES = {
+    'default': {
+        'ENGINE': config('DATABASE_ENGINE', default='django.db.backends.sqlite3'),
+        'NAME': config('DATABASE_NAME', default='db.sqlite3'),
+        'USER': config('DATABASE_USER', default=''),
+        'PASSWORD': config('DATABASE_PASSWORD', default=''),
+        'HOST': config('DATABASE_HOST', default=''),
+        'PORT': config('DATABASE_PORT', default=''),
     }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+}
 
+# Optional: parse DATABASE_URL if you deploy to Leapcell/PostgreSQL
 
-# Password validation
-# https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
+if DATABASE_URL:
+    DATABASES['default'] = dj_database_url.parse(DATABASE_URL, conn_max_age=600)
 
+# -------------------------------
+# PASSWORD VALIDATION
+# -------------------------------
 AUTH_PASSWORD_VALIDATORS = [
-    {
-        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
-    },
-    {
-        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
-    },
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',},
 ]
 
-
-# Internationalization
-# https://docs.djangoproject.com/en/5.2/topics/i18n/
-
+# -------------------------------
+# INTERNATIONALIZATION
+# -------------------------------
 LANGUAGE_CODE = 'en-us'
-
 TIME_ZONE = 'UTC'
-
 USE_I18N = True
-
 USE_TZ = True
 
-
-# Static files (CSS, JavaScript, Images)
-# https://docs.djangoproject.com/en/5.2/howto/static-files/
-
-STATIC_URL = 'static/'
-
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
-
+# -------------------------------
+# DEFAULT AUTO FIELD
+# -------------------------------
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# -------------------------------
+# LOGGING CONFIGURATION
+# -------------------------------
 
 LOGGING = {
     "version": 1,
@@ -168,8 +174,7 @@ LOGGING = {
     "formatters": {
         "json": {
             "format": (
-                '{"time": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s", '
-                '"logger": "%(name)s", "correlation_id": "%(cid)s"}'
+                '{"time": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s"}'
             )
         },
     },
@@ -178,15 +183,11 @@ LOGGING = {
             "class": "logging.StreamHandler",
             "formatter": "json",
         },
-        "file": {
-            "class": "logging.FileHandler",
-            "filename": os.path.join(LOG_DIR, "django.log"),
-            "formatter": "json",
-            "level": "INFO",
-        },
     },
     "root": {
-        "handlers": ["console", "file"],
+        "handlers": ["console"],
         "level": "INFO",
     },
 }
+
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
