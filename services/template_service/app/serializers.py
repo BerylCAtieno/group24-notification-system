@@ -3,6 +3,11 @@ from .models import Template
 
 # ---------- Create/Update serializer ----------
 class TemplateCreateSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(max_length=255)
+    version = serializers.CharField(max_length=10, default="latest")
+    language = serializers.CharField(max_length=2, default="en")
+    type = serializers.CharField(max_length=10)
+    subject = serializers.CharField(allow_blank=True, allow_null=True, required=False)
     body = serializers.DictField(child=serializers.CharField(), required=True)
     variables = serializers.ListField(child=serializers.DictField(), required=True)
     metadata = serializers.DictField(required=False)
@@ -30,24 +35,22 @@ class TemplateCreateSerializer(serializers.ModelSerializer):
                 )
         return value
 
-
-# ---------- Response serializer (exact API shape for GET) ----------
+# ---------- Response serializer ----------
 class TemplateResponseSerializer(serializers.Serializer):
     template_id = serializers.CharField()
-    name = serializers.CharField()
-    version = serializers.CharField()
-    language = serializers.CharField()
-    type = serializers.CharField()
+    name = serializers.CharField(max_length=255)
+    version = serializers.CharField(max_length=10)
+    language = serializers.CharField(max_length=2)
+    type = serializers.CharField(max_length=10)
     subject = serializers.CharField(allow_blank=True, allow_null=True)
     body = serializers.DictField()
     variables = serializers.ListField()
     metadata = serializers.DictField()
 
-
 # ---------- Render request serializer ----------
 class TemplateRenderSerializer(serializers.Serializer):
-    language = serializers.CharField(required=False, default="en")
-    version = serializers.CharField(required=False, default="latest")
+    language = serializers.CharField(max_length=2, required=False, default="en")
+    version = serializers.CharField(max_length=10, required=False, default="latest")
     variables = serializers.DictField(child=serializers.CharField(), required=True)
     preview_mode = serializers.BooleanField(default=False)
 
@@ -56,15 +59,13 @@ class TemplateRenderSerializer(serializers.Serializer):
             raise serializers.ValidationError("Variables must be a dictionary")
         return value
 
-
 # ---------- Batch render request ----------
 class BatchTemplateRenderRequestSerializer(serializers.Serializer):
     template_id = serializers.CharField()
-    language = serializers.CharField(required=False, default="en")
-    version = serializers.CharField(required=False, default="latest")
+    language = serializers.CharField(max_length=2, required=False, default="en")
+    version = serializers.CharField(max_length=10, required=False, default="latest")
     variables = serializers.DictField(child=serializers.CharField(), required=True)
     preview_mode = serializers.BooleanField(default=False)
-
 
 class BatchTemplateRenderSerializer(serializers.Serializer):
     requests = BatchTemplateRenderRequestSerializer(many=True)
